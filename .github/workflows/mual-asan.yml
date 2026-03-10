@@ -1,0 +1,64 @@
+name: Build bun-webkit musl ASAN
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  linux-musl-asan:
+    name: Linux musl (ASAN)
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: bun-webkit-linux-amd64-musl-asan
+            os: ubuntu-22.04
+            package_json_arch: x64
+            CMAKE_BUILD_TYPE: MinSizeRel
+            lto_flag: ""
+            ENABLE_SANITIZERS: "address,undefined"
+
+          - label: bun-webkit-linux-arm64-musl-asan
+            os: ubuntu-22.04
+            package_json_arch: arm64
+            CMAKE_BUILD_TYPE: MinSizeRel
+            lto_flag: ""
+            ENABLE_SANITIZERS: "address,undefined"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y \
+            build-essential \
+            clang \
+            lld \
+            cmake \
+            ninja-build \
+            git \
+            curl \
+            python3 \
+            tar \
+            xz-utils
+
+      - name: Build bun-webkit (musl ASAN)
+        run: |
+          WEBKIT_RELEASE_TYPE=${{ matrix.CMAKE_BUILD_TYPE }} \
+          CPU="native" \
+          cpu=native \
+          LTO_FLAG="${{ matrix.lto_flag }}" \
+          ENABLE_SANITIZERS="${{ matrix.ENABLE_SANITIZERS }}" \
+          temp=${{ runner.temp }} \
+          bash musl-release.sh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.label }}
+          path: bun-webkit.tar.gz
