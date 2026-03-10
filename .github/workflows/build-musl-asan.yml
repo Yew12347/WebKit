@@ -17,7 +17,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
     permissions:
       contents: write
-    uses: ./.github/workflows/build-musl-asan.yml
+    uses: ./.github/workflows/musl-asan.yml
     with:
       build_ref: ${{ github.sha }}
       release_tag: autobuild-${{ github.sha }}
