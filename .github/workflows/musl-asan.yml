@@ -2,27 +2,29 @@ name: Build bun-webkit musl ASAN
 
 on:
   push:
+    branches: [ main ]
   pull_request:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Tag to release under (e.g. autobuild-123)'
+        required: false
+        type: string
 
 jobs:
   linux-musl-asan:
     name: Linux musl (ASAN)
-    runs-on: ${{ matrix.os }}
-
+    runs-on: ubuntu-latest # Using standard runner for consistency
     strategy:
       fail-fast: false
       matrix:
         include:
           - label: bun-webkit-linux-amd64-musl-asan
-            os: ubuntu-22.04
             package_json_arch: x64
             CMAKE_BUILD_TYPE: MinSizeRel
             lto_flag: ""
             ENABLE_SANITIZERS: "address,undefined"
-
           - label: bun-webkit-linux-arm64-musl-asan
-            os: ubuntu-22.04
             package_json_arch: arm64
             CMAKE_BUILD_TYPE: MinSizeRel
             lto_flag: ""
@@ -35,20 +37,11 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y \
-            build-essential \
-            clang \
-            lld \
-            cmake \
-            ninja-build \
-            git \
-            curl \
-            python3 \
-            tar \
-            xz-utils
+          sudo apt install -y build-essential clang lld cmake ninja-build git curl python3 tar xz-utils
 
-      - name: Build bun-webkit (musl ASAN)
+      - name: Build
         run: |
+          # The script likely creates the tarball in the current dir or $temp
           WEBKIT_RELEASE_TYPE=${{ matrix.CMAKE_BUILD_TYPE }} \
           CPU="native" \
           cpu=native \
@@ -56,9 +49,42 @@ jobs:
           ENABLE_SANITIZERS="${{ matrix.ENABLE_SANITIZERS }}" \
           temp=${{ runner.temp }} \
           bash musl-release.sh
+          
+          # Ensure the file is where we expect it for the upload step
+          if [ ! -f "bun-webkit.tar.gz" ] && [ -f "${{ runner.temp }}/bun-webkit.tar.gz" ]; then
+            cp "${{ runner.temp }}/bun-webkit.tar.gz" .
+          fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.label }}
           path: bun-webkit.tar.gz
+
+  release:
+    name: Create Release
+    needs: linux-musl-asan
+    if: github.event_name == 'workflow_dispatch' && inputs.release_tag != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+
+      - name: Prepare Assets
+        run: |
+          mkdir -p out
+          # Find the tarballs in their specific artifact folders and rename them
+          cp ./artifacts/bun-webkit-linux-amd64-musl-asan/bun-webkit.tar.gz ./out/bun-webkit-linux-amd64-musl-asan.tar.gz
+          cp ./artifacts/bun-webkit-linux-arm64-musl-asan/bun-webkit.tar.gz ./out/bun-webkit-linux-arm64-musl-asan.tar.gz
+
+      - name: GH Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ inputs.release_tag }}
+          files: |
+            ./out/bun-webkit-linux-amd64-musl-asan.tar.gz
+            ./out/bun-webkit-linux-arm64-musl-asan.tar.gz
